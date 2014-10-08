@@ -5,16 +5,22 @@ import android.content.Context;
 import android.hardware.Camera;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.util.Log;
 import android.view.Display;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
+import android.view.OrientationEventListener;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.SeekBar;
 import android.widget.Toast;
 
 import java.io.File;
@@ -33,6 +39,10 @@ public class CameraFragment extends Fragment {
     private Camera mCamera;
     private CameraPreview mPreview;
     private View mCameraView ;
+    /**
+     * 自定义调节相机焦距
+     */
+    private SeekBar seekBar;
     public static final int MEDIA_TYPE_IMAGE = 1;//保存照片
     public static final int MEDIA_TYPE_VIDEO = 2;//保存视频
 
@@ -58,9 +68,15 @@ public class CameraFragment extends Fragment {
     }
 
     @Override
+    public void onStart() {
+        super.onStart();
+    }
+
+    @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_camera, container, false);
         mCameraView = view;
+        seekBar = (SeekBar) view.findViewById(R.id.seek_bar);
         boolean isSafeOpen = safeCameraOpenInView(view);
         if(isSafeOpen==false){
             Log.e("CameraFragment","Camera 没有被打开");
@@ -70,9 +86,11 @@ public class CameraFragment extends Fragment {
         btnCapture.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                mCamera.takePicture(null,null,mPicture);
+                takePhoto();//拍照
             }
         });
+        seekBar.setOnSeekBarChangeListener(new MySeekBarListener());
+        seekBar.setOnTouchListener(new SeekBarOnTouchListener());
         return view;
     }
 
@@ -157,8 +175,12 @@ public class CameraFragment extends Fragment {
         public void surfaceCreated(SurfaceHolder surfaceHolder) {
             //surface已经创建，现在告诉相机在哪儿绘制预览view
             try {
-                mCamera.setPreviewDisplay(surfaceHolder);
-                mCamera.startPreview();
+                if(camera==null){
+                   mCamera = camera = getCameraInstance();
+                    camera.setDisplayOrientation(90);
+                }
+                camera.setPreviewDisplay(surfaceHolder);
+                camera.startPreview();
 
             } catch (IOException e) {
                 e.printStackTrace();
@@ -176,15 +198,15 @@ public class CameraFragment extends Fragment {
 
             //在作出改变之前停止预览view
              try {
-                 mCamera.stopPreview();
+                 camera.stopPreview();
              }catch (Exception e){
 
              }
            //在这里设置preView的大小，重置大小
             //摄像头画面显示在Surface上
-            if (mCamera != null) {
+            if (camera != null) {
                 getScreenSize();//获取屏幕的宽高
-                Camera.Parameters parameters = mCamera.getParameters();
+                Camera.Parameters parameters = camera.getParameters();
                 List<Camera.Size> sizes = parameters.getSupportedPreviewSizes();
                 int[] a = new int[sizes.size()];
                 int[] b = new int[sizes.size()];
@@ -214,7 +236,7 @@ public class CameraFragment extends Fragment {
                 parameters.setPreviewSize(sizes.get(minW).width,sizes.get(minH).height); // 设置预览图像大小
                 parameters.setPictureSize(sizes.get(minW).width,sizes.get(minH).height);//设置图片的大小
                 parameters.setPreviewFrameRate(list.get(list.size() - 1));
-                mCamera.setParameters(parameters);
+                camera.setParameters(parameters);
               //  mCamera.setDisplayOrientation(90);
               //  mCamera.startPreview();
 
@@ -222,14 +244,14 @@ public class CameraFragment extends Fragment {
 
             //用新的设置开启Preview
             try {
-                mCamera.setPreviewDisplay(surfaceHolder);
-                mCamera.startPreview();
+                camera.setPreviewDisplay(surfaceHolder);
+                camera.startPreview();
                 /**
                  * 设置自动对焦
                  * 注意对焦操作要在开启预览后，不然会抛异常
                  *
                  */
-                mCamera.autoFocus(autoFocusCallback);
+                camera.autoFocus(autoFocusCallback);
 
             } catch (IOException e) {
                 e.printStackTrace();
@@ -254,13 +276,40 @@ public class CameraFragment extends Fragment {
     }
 
     /**
+     * 拍照前。调整图片的方向
+     */
+     public void takePhoto(){
+         MyOrientationDetector   cameraOrientation = new MyOrientationDetector(getActivity());
+         if (mCamera != null) {
+             mCamera.stopPreview();//设置参数前停止预览
+             int orientation = cameraOrientation.getOrientation();
+             Camera.Parameters cameraParameter = mCamera.getParameters();
+             cameraParameter.setRotation(90);
+             cameraParameter.set("rotation", 90);
+             if ((orientation >= 45) && (orientation < 135)) {
+                 cameraParameter.setRotation(180);
+                 cameraParameter.set("rotation", 180);
+             }
+             if ((orientation >= 135) && (orientation < 225)) {
+                 cameraParameter.setRotation(270);
+                 cameraParameter.set("rotation", 270);
+             }
+             if ((orientation >= 225) && (orientation < 315)) {
+                 cameraParameter.setRotation(0);
+                 cameraParameter.set("rotation", 0);
+             }
+             mCamera.setParameters(cameraParameter);
+             mCamera.startPreview();//参数设置完成后开启预览
+             mCamera.takePicture(null, null, mPicture);
+         }
+     }
+    /**
      * Picture Callback 处理图片的预览和保存到文件
      */
     private Camera.PictureCallback mPicture = new Camera.PictureCallback() {
 
         @Override
         public void onPictureTaken(byte[] data, Camera camera) {
-            System.out.println("zhixing ...........");
             File pictureFile = getOutputMediaFile(MEDIA_TYPE_IMAGE);
             if (pictureFile == null){
                 Toast.makeText(getActivity(), "Image retrieval failed.", Toast.LENGTH_SHORT)
@@ -272,9 +321,10 @@ public class CameraFragment extends Fragment {
                 FileOutputStream fos = new FileOutputStream(pictureFile);
                 fos.write(data);
                 fos.close();
-
-                // Restart the camera preview.
-               safeCameraOpenInView(mCameraView);
+                /**
+                 *保存照片后，重启预览
+                 */
+                mCamera.startPreview();
             } catch (FileNotFoundException e) {
                 e.printStackTrace();
             } catch (IOException e) {
@@ -287,7 +337,11 @@ public class CameraFragment extends Fragment {
     private static File getOutputMediaFile(int type){
         // To be safe, you should check that the SDCard is mounted
         // using Environment.getExternalStorageState() before doing this.
-
+        if(!Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)){
+            Log.d("MyCameraApp", "SD卡不可用");
+            return null;
+        }
+        System.out.println("执行到getOutPutMediaFile ...........");
         File mediaStorageDir = new File(Environment.getExternalStoragePublicDirectory(
                 Environment.DIRECTORY_PICTURES), "MyCameraApp");
         // This location works best if you want the created images to be shared
@@ -322,5 +376,103 @@ public class CameraFragment extends Fragment {
      */
    public void reAutoFoucus(){
        mCamera.autoFocus(autoFocusCallback);
+     //  seekBar.setVisibility(View.VISIBLE);
    }
+
+    /**
+     * 显示变焦条
+     */
+   public void showSeekBar(){
+      seekBar.setVisibility(View.VISIBLE);
+   }
+
+    /**
+     * 隐藏变焦条
+     */
+    public void hideSeekBar(){
+       Animation animation = AnimationUtils.loadAnimation(getActivity(),R.anim.fade_out);
+        //设置隐藏动画
+        seekBar.setAnimation(animation);
+        seekBar.setVisibility(View.GONE);
+    }
+
+    /**
+     * 方向变化监听器，监听传感器方向的改变
+     * @author zw.yan
+     *
+     */
+    public class MyOrientationDetector extends OrientationEventListener {
+        int Orientation;
+        public MyOrientationDetector(Context context ) {
+            super(context );
+        }
+        @Override
+        public void onOrientationChanged(int orientation) {
+            Log.i("MyOrientationDetector ","onOrientationChanged:"+orientation);
+            this.Orientation=orientation;
+            Log.d("MyOrientationDetector","当前的传感器方向为"+orientation);
+        }
+
+        public int getOrientation(){
+            return Orientation;
+        }
+    }
+
+    public class MySeekBarListener implements SeekBar.OnSeekBarChangeListener {
+
+        @Override
+        public void onProgressChanged(SeekBar seekBar, int progress, boolean b) {
+            //这里改变焦距
+            Camera.Parameters parameters = mCamera.getParameters();
+            if(parameters.isZoomSupported()){
+                /**
+                 * rate变焦率
+                 * 相机最大的zoom分成100,因为变焦条最大值为100，然后用rate*变焦条的progress
+                 */
+                float rate = parameters.getMaxZoom()/100f;
+
+                parameters.setZoom((int)(progress*rate));
+                mCamera.setParameters(parameters);
+            }
+        }
+
+        @Override
+        public void onStartTrackingTouch(SeekBar seekBar) {
+            mCamera.stopPreview();
+        }
+
+        @Override
+        public void onStopTrackingTouch(SeekBar seekBar) {
+            mCamera.startPreview();
+        }
+    }
+
+    /**
+     *view的触屏事件
+     */
+   public class SeekBarOnTouchListener implements View.OnTouchListener {
+
+       @Override
+       public boolean onTouch(View view, MotionEvent motionEvent) {
+           if(seekBar.getVisibility()!=View.VISIBLE){
+               showSeekBar();
+           }
+           /**
+            * 判断是否离开view，如果离开，2秒后隐藏聚焦条
+            */
+           if(motionEvent.getAction()==MotionEvent.ACTION_UP) {
+               /**
+                * 延迟3秒后隐藏变焦条
+                */
+               new Handler().postDelayed(new Runnable() {
+                   @Override
+                   public void run() {
+                       hideSeekBar();
+                   }
+               }, 3000);
+           }
+           return false;
+       }
+   }
+
 }
