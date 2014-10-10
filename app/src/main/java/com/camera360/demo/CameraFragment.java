@@ -2,12 +2,14 @@ package com.camera360.demo;
 
 import android.app.Fragment;
 import android.content.Context;
+import android.content.Intent;
 import android.hardware.Camera;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.util.Log;
 import android.view.Display;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.OrientationEventListener;
@@ -20,6 +22,7 @@ import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.PopupWindow;
 import android.widget.SeekBar;
 import android.widget.Toast;
 
@@ -28,13 +31,14 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
 /**
  * Created by zhouwei on 14-9-29.
  */
-public class CameraFragment extends Fragment {
+public class CameraFragment extends Fragment implements View.OnClickListener{
     public String TAG = "CameraFragment";
     private Camera mCamera;
     private CameraPreview mPreview;
@@ -43,6 +47,21 @@ public class CameraFragment extends Fragment {
      * 自定义调节相机焦距
      */
     private SeekBar seekBar;
+    /**
+     * 前后摄像头变换按钮
+     */
+    private ImageView btnSwichCamera;
+    private ImageView btnChangeFlash;
+    private ImageView btnSetting;
+
+    private PopupWindow pop;
+    /**
+     * 当前的摄像头id
+     */
+    private int currentCameraId;
+
+    SurfaceHolder mHolder;
+
     public static final int MEDIA_TYPE_IMAGE = 1;//保存照片
     public static final int MEDIA_TYPE_VIDEO = 2;//保存视频
 
@@ -74,14 +93,18 @@ public class CameraFragment extends Fragment {
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        System.out.println("onCreateView()....");
         View view = inflater.inflate(R.layout.fragment_camera, container, false);
         mCameraView = view;
-        seekBar = (SeekBar) view.findViewById(R.id.seek_bar);
         boolean isSafeOpen = safeCameraOpenInView(view);
         if(isSafeOpen==false){
             Log.e("CameraFragment","Camera 没有被打开");
             return view;
         }
+        btnSwichCamera = (ImageView) view.findViewById(R.id.sw_camera);
+        btnChangeFlash = (ImageView) view.findViewById(R.id.setting_flash);
+        btnSetting = (ImageView) view.findViewById(R.id.setting_camera);
+        seekBar = (SeekBar) view.findViewById(R.id.seek_bar);
         ImageView btnCapture = (ImageView)view.findViewById(R.id.btn_capture);
         btnCapture.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -91,13 +114,49 @@ public class CameraFragment extends Fragment {
         });
         seekBar.setOnSeekBarChangeListener(new MySeekBarListener());
         seekBar.setOnTouchListener(new SeekBarOnTouchListener());
+        btnSetting.setOnClickListener(this);
+        btnChangeFlash.setOnClickListener(this);
+        btnSwichCamera.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                //当前打开的是后摄像头
+                if (currentCameraId == Camera.CameraInfo.CAMERA_FACING_BACK) {
+                    if (mCamera != null) {
+                        mCamera.stopPreview();//停止预览
+                        releaseCameraAndPreview();//释放资源
+                        currentCameraId = Camera.CameraInfo.CAMERA_FACING_FRONT;//重设id
+                    }
+                } else if (currentCameraId == Camera.CameraInfo.CAMERA_FACING_FRONT) {//当前打开的是前摄像头
+                    if (mCamera != null) {
+                        mCamera.stopPreview();
+                        releaseCameraAndPreview();
+                        currentCameraId = Camera.CameraInfo.CAMERA_FACING_BACK;
+                    }
+                }
+                //重新打开摄像头
+                mCamera = Camera.open(currentCameraId);
+                mCamera.setDisplayOrientation(90);
+                try {
+                    mCamera.setPreviewDisplay(mHolder);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                mCamera.startPreview();
+            }
+        });
         return view;
     }
 
+    /**
+     * 初始化一个camera实例,和preview
+     * @param view
+     * @return
+     */
     private boolean safeCameraOpenInView(View view) {
         boolean qOpened = false;
         releaseCameraAndPreview();
         mCamera = getCameraInstance();
+        currentCameraId = Camera.CameraInfo.CAMERA_FACING_BACK;//默认打开的是后摄像头
         /** 默认预览的图片为横向，我们需要将显示的Orientation旋转以下*/
         mCamera.setDisplayOrientation(90);
         qOpened = (mCamera != null);
@@ -146,15 +205,86 @@ public class CameraFragment extends Fragment {
         releaseCameraAndPreview();
     }
 
+
     @Override
     public void onPause() {
         super.onPause();
         releaseCameraAndPreview();
+        System.out.println("onPause()...");
+    }
+    /**
+     * button的点击事件
+     */
+    @Override
+    public void onClick(View v) {
+        Camera.Parameters parameters = mCamera.getParameters();
+        switch (v.getId()){
+            case R.id.setting_flash://闪光灯设置
+                if(pop!=null && pop.isShowing()){
+                    pop.dismiss();
+                }else{
+                    View view = getActivity().getLayoutInflater().inflate(R.layout.flash_setting,null);
+                    view.findViewById(R.id.flash_on).setOnClickListener(this);
+                    view.findViewById(R.id.flash_off).setOnClickListener(this);
+                    /** 得到一个popWindow的实例*/
+                    pop = PopWindowUtils.getPopWindowInstance(300, ViewGroup.LayoutParams.WRAP_CONTENT,view);
+                   /** 设置popWindow的显示位置*/
+                    pop.showAsDropDown(btnChangeFlash, 0, 10);
+                }
+               break;
+            case R.id.setting_camera://相机设置
+                ArrayList<String> list = new ArrayList<String>();
+                List<Camera.Size> sizes = mCamera.getParameters().getSupportedPreviewSizes();
+                for(int i=0;i<sizes.size();i++){
+                    String ratio = sizes.get(i).width+"*"+sizes.get(i).height;
+                    list.add(ratio);
+                }
+                Bundle bundle = new Bundle();
+                bundle.putStringArrayList("ratio",list);
+                Intent intent = new Intent(getActivity(),SettingActivity.class);
+                intent.putExtras(bundle);
+                startActivityForResult(intent, 0);
+                break;
+
+            case R.id.flash_off://关闭闪光灯
+                parameters.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
+                mCamera.setParameters(parameters);
+                pop.dismiss();
+                break;
+            case R.id.flash_on://打开闪光灯
+                parameters.setFlashMode(Camera.Parameters.FLASH_MODE_ON);
+                mCamera.setParameters(parameters);
+               pop.dismiss();
+                break;
+        }
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+       // super.onActivityResult(requestCode, resultCode, data);
+        if(requestCode==0&&resultCode==1){
+            if(data!=null){
+                System.out.println("进入onActivityResult 方法......");
+                String result = data.getExtras().getString("result");
+                System.out.println("result:"+result);
+                String arr[] = result.split("\\*");
+                int width = Integer.parseInt(arr[0]);
+                int height = Integer.parseInt(arr[1]);
+                System.out.println("w："+width+"  h："+height+"==="+mCamera);
+                mCamera.stopPreview();
+                Camera.Parameters p = mCamera.getParameters();
+                //重新设置分辨率
+                p.setPictureSize(width,height);
+                p.setPreviewSize(width,height);
+                mCamera.setParameters(p);
+                mCamera.startPreview();
+            }
+        }
     }
 
     class CameraPreview extends SurfaceView implements SurfaceHolder.Callback{
         final String TAG ="CameraPreview";
-        SurfaceHolder mHolder;
+       // SurfaceHolder mHolder;
         Camera camera;
         Context context;
         int screenHeight;
@@ -173,11 +303,12 @@ public class CameraFragment extends Fragment {
          }
         @Override
         public void surfaceCreated(SurfaceHolder surfaceHolder) {
+            System.out.println("surfaceCreated..................");
             //surface已经创建，现在告诉相机在哪儿绘制预览view
             try {
                 if(camera==null){
                    mCamera = camera = getCameraInstance();
-                    camera.setDisplayOrientation(90);
+                   camera.setDisplayOrientation(90);
                 }
                 camera.setPreviewDisplay(surfaceHolder);
                 camera.startPreview();
@@ -216,6 +347,7 @@ public class CameraFragment extends Fragment {
                     a[i] = Math.abs(supportW - screenHeight);
                     b[i] = Math.abs(supportH - screenWidth);
                     Log.d(TAG,"supportW:"+supportW+"supportH:"+supportH);
+                    System.out.println("------->supportW:"+supportW+"supportH:"+supportH);
                 }
                 int minW=0,minA=a[0];
                 for( int i=0; i<a.length; i++){
@@ -239,7 +371,6 @@ public class CameraFragment extends Fragment {
                 camera.setParameters(parameters);
               //  mCamera.setDisplayOrientation(90);
               //  mCamera.startPreview();
-
             }
 
             //用新的设置开启Preview
@@ -251,7 +382,7 @@ public class CameraFragment extends Fragment {
                  * 注意对焦操作要在开启预览后，不然会抛异常
                  *
                  */
-                camera.autoFocus(autoFocusCallback);
+               camera.autoFocus(autoFocusCallback);
 
             } catch (IOException e) {
                 e.printStackTrace();
@@ -283,6 +414,7 @@ public class CameraFragment extends Fragment {
          if (mCamera != null) {
              mCamera.stopPreview();//设置参数前停止预览
              int orientation = cameraOrientation.getOrientation();
+             System.out.println("当前orentation："+orientation);
              Camera.Parameters cameraParameter = mCamera.getParameters();
              cameraParameter.setRotation(90);
              cameraParameter.set("rotation", 90);
@@ -367,7 +499,6 @@ public class CameraFragment extends Fragment {
         } else {
             return null;
         }
-
         return mediaFile;
     }
 
@@ -375,8 +506,9 @@ public class CameraFragment extends Fragment {
      * 自动聚焦
      */
    public void reAutoFoucus(){
-       mCamera.autoFocus(autoFocusCallback);
-     //  seekBar.setVisibility(View.VISIBLE);
+       if(mCamera!=null){
+           mCamera.autoFocus(autoFocusCallback);
+       }
    }
 
     /**

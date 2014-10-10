@@ -3,5 +3,6 @@
     xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- seekBar 的背景图-->
     <item
-        android:drawable="@drawable/line"/>
+        android:drawable="@drawable/line"
+        />
 </layer-list>
