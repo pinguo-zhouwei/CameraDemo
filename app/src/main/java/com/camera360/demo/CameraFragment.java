@@ -3,6 +3,7 @@ package com.camera360.demo;
 import android.app.Fragment;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.hardware.Camera;
 import android.os.Bundle;
 import android.os.Environment;
@@ -33,7 +34,9 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Created by zhouwei on 14-9-29.
@@ -61,7 +64,10 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
     private int currentCameraId;
 
     SurfaceHolder mHolder;
-
+    /**
+     * 用SharedPreferences保存当前的分辨率
+     */
+    private SharedPreferences sp;
     public static final int MEDIA_TYPE_IMAGE = 1;//保存照片
     public static final int MEDIA_TYPE_VIDEO = 2;//保存视频
 
@@ -84,11 +90,21 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        sp = getActivity().getSharedPreferences("ratio",Context.MODE_PRIVATE);
     }
 
     @Override
     public void onStart() {
         super.onStart();
+     // safeCameraOpenInView(mCameraView);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        //在onResume里面需要判断mCamera是否为null,如果为null需要重新打开摄像头
+        System.out.println("onResume()...."+mCamera);
+        reOpenCamera();
     }
 
     @Override
@@ -133,20 +149,39 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                         currentCameraId = Camera.CameraInfo.CAMERA_FACING_BACK;
                     }
                 }
-                //重新打开摄像头
-                mCamera = Camera.open(currentCameraId);
-                mCamera.setDisplayOrientation(90);
-                try {
-                    mCamera.setPreviewDisplay(mHolder);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                mCamera.startPreview();
+             /** 重启摄像头*/
+             reOpenCamera();
             }
         });
         return view;
     }
 
+    /**
+     * 打开摄像头
+     */
+    public void reOpenCamera(){
+        if(mCamera==null){
+            //重新打开摄像头
+            mCamera = Camera.open(currentCameraId);
+            mCamera.setDisplayOrientation(90);
+            //取出分辨率
+            int width = sp.getInt("width",1280);
+            int height = sp.getInt("height",720);
+            System.out.println("width: "+width+"  height:"+height);
+            Camera.Parameters p = mCamera.getParameters();
+            //重新设置分辨率
+            p.setPictureSize(width,height);
+            p.setPreviewSize(width,height);
+            mCamera.setParameters(p);
+            try {
+                mCamera.setPreviewDisplay(mHolder);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            mCamera.startPreview();
+        }
+
+    }
     /**
      * 初始化一个camera实例,和preview
      * @param view
@@ -270,7 +305,17 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                 String arr[] = result.split("\\*");
                 int width = Integer.parseInt(arr[0]);
                 int height = Integer.parseInt(arr[1]);
+                //保存设置的分辨率到SharedPreferences
+                SharedPreferences.Editor editor = sp.edit();
+                editor.putInt("width",width);
+                editor.putInt("height",height);
+                editor.commit();
+              /*  Map<String,Integer> map = new HashMap<String, Integer>();
+                map.put("width",width);
+                map.put("height",height);
+                savaDataToSharedPreferences(map);*/
                 System.out.println("w："+width+"  h："+height+"==="+mCamera);
+                reOpenCamera();
                 mCamera.stopPreview();
                 Camera.Parameters p = mCamera.getParameters();
                 //重新设置分辨率
@@ -282,6 +327,19 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
         }
     }
 
+    /**
+     *  保存数据到SharedPreferences
+     * @param data
+     */
+    public void savaDataToSharedPreferences(Map<String,Integer> data){
+        for(Map.Entry<String,Integer> entry:data.entrySet()){
+            String key = entry.getKey();
+            int value = entry.getValue();
+            SharedPreferences.Editor editor = sp.edit();
+            editor.putInt(key,value);
+            editor.commit();
+        }
+    }
     class CameraPreview extends SurfaceView implements SurfaceHolder.Callback{
         final String TAG ="CameraPreview";
        // SurfaceHolder mHolder;
@@ -307,7 +365,11 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
             //surface已经创建，现在告诉相机在哪儿绘制预览view
             try {
                 if(camera==null){
-                   mCamera = camera = getCameraInstance();
+                    if(mCamera!=null){
+                        camera = mCamera;
+                    }else{
+                        mCamera = camera = getCameraInstance();
+                    }
                    camera.setDisplayOrientation(90);
                 }
                 camera.setPreviewDisplay(surfaceHolder);
@@ -369,6 +431,11 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                 parameters.setPictureSize(sizes.get(minW).width,sizes.get(minH).height);//设置图片的大小
                 parameters.setPreviewFrameRate(list.get(list.size() - 1));
                 camera.setParameters(parameters);
+                //保存设置的分辨率
+                SharedPreferences.Editor editor = sp.edit();
+                editor.putInt("width",sizes.get(minW).width);
+                editor.putInt("height",sizes.get(minH).height);
+                editor.commit();
               //  mCamera.setDisplayOrientation(90);
               //  mCamera.startPreview();
             }
