@@ -4,6 +4,8 @@ import android.app.Fragment;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.hardware.Camera;
 import android.os.Bundle;
 import android.os.Environment;
@@ -64,6 +66,8 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
     private int currentCameraId;
 
     SurfaceHolder mHolder;
+    /** 显示当前拍摄的照片*/
+    private ImageView picZoom;
     /**
      * 用SharedPreferences保存当前的分辨率
      */
@@ -121,7 +125,16 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
         btnChangeFlash = (ImageView) view.findViewById(R.id.setting_flash);
         btnSetting = (ImageView) view.findViewById(R.id.setting_camera);
         seekBar = (SeekBar) view.findViewById(R.id.seek_bar);
+        picZoom  = (ImageView) view.findViewById(R.id.pic_zoom);
         ImageView btnCapture = (ImageView)view.findViewById(R.id.btn_capture);
+        picZoom.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(getActivity(),AlbumActivity.class);
+                startActivity(intent);
+            }
+        });
+        setBitmapToImageView();
         btnCapture.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -231,6 +244,16 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
         }
     }
 
+    /**
+     * 给ImageView设置图片
+     */
+    private void setBitmapToImageView(){
+        String path = sp.getString("url","");
+        if(!path.equals("")){
+            Bitmap bitmap = BitmapFactory.decodeFile(path);
+            picZoom.setImageBitmap(bitmap);
+        }
+    }
     @Override
     public void onDestroy() {
         super.onDestroy();
@@ -291,6 +314,9 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                 mCamera.setParameters(parameters);
                pop.dismiss();
                 break;
+           /* case R.id.pic_zoom://到相册
+
+                break;*/
         }
     }
 
@@ -515,7 +541,13 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                         .show();
                 return;
             }
-
+             //显示图片
+            Bitmap bitmap = BitmapFactory.decodeByteArray(data,0,data.length);
+            picZoom.setImageBitmap(bitmap);
+            //保存最后照的照片的地址
+            SharedPreferences.Editor editor = sp.edit();
+            editor.putString("url",pictureFile.toString());
+            editor.commit();
             try {
                 FileOutputStream fos = new FileOutputStream(pictureFile);
                 fos.write(data);
@@ -537,19 +569,19 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
         // To be safe, you should check that the SDCard is mounted
         // using Environment.getExternalStorageState() before doing this.
         if(!Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)){
-            Log.d("MyCameraApp", "SD卡不可用");
+            Log.d("CameraDemo", "SD卡不可用");
             return null;
         }
         System.out.println("执行到getOutPutMediaFile ...........");
         File mediaStorageDir = new File(Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_PICTURES), "MyCameraApp");
+                Environment.DIRECTORY_PICTURES), "CameraDemo");
         // This location works best if you want the created images to be shared
         // between applications and persist after your app has been uninstalled.
 
         // Create the storage directory if it does not exist
         if (! mediaStorageDir.exists()){
             if (! mediaStorageDir.mkdirs()){
-                Log.d("MyCameraApp", "failed to create directory");
+                Log.d("CameraDemo", "failed to create directory");
                 return null;
             }
         }
@@ -637,12 +669,10 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
 
         @Override
         public void onStartTrackingTouch(SeekBar seekBar) {
-            mCamera.stopPreview();
         }
 
         @Override
         public void onStopTrackingTouch(SeekBar seekBar) {
-            mCamera.startPreview();
         }
     }
 
