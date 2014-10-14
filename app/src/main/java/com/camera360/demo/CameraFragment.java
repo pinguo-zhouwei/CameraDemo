@@ -72,6 +72,7 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
      * 用SharedPreferences保存当前的分辨率
      */
     private SharedPreferences sp;
+
     public static final int MEDIA_TYPE_IMAGE = 1;//保存照片
     public static final int MEDIA_TYPE_VIDEO = 2;//保存视频
 
@@ -98,12 +99,6 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
     }
 
     @Override
-    public void onStart() {
-        super.onStart();
-     // safeCameraOpenInView(mCameraView);
-    }
-
-    @Override
     public void onResume() {
         super.onResume();
         //在onResume里面需要判断mCamera是否为null,如果为null需要重新打开摄像头
@@ -127,45 +122,14 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
         seekBar = (SeekBar) view.findViewById(R.id.seek_bar);
         picZoom  = (ImageView) view.findViewById(R.id.pic_zoom);
         ImageView btnCapture = (ImageView)view.findViewById(R.id.btn_capture);
-        picZoom.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent intent = new Intent(getActivity(),AlbumActivity.class);
-                startActivity(intent);
-            }
-        });
+        picZoom.setOnClickListener(this);
         setBitmapToImageView();
-        btnCapture.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                takePhoto();//拍照
-            }
-        });
+        btnCapture.setOnClickListener(this);
         seekBar.setOnSeekBarChangeListener(new MySeekBarListener());
         seekBar.setOnTouchListener(new SeekBarOnTouchListener());
         btnSetting.setOnClickListener(this);
         btnChangeFlash.setOnClickListener(this);
-        btnSwichCamera.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                //当前打开的是后摄像头
-                if (currentCameraId == Camera.CameraInfo.CAMERA_FACING_BACK) {
-                    if (mCamera != null) {
-                        mCamera.stopPreview();//停止预览
-                        releaseCameraAndPreview();//释放资源
-                        currentCameraId = Camera.CameraInfo.CAMERA_FACING_FRONT;//重设id
-                    }
-                } else if (currentCameraId == Camera.CameraInfo.CAMERA_FACING_FRONT) {//当前打开的是前摄像头
-                    if (mCamera != null) {
-                        mCamera.stopPreview();
-                        releaseCameraAndPreview();
-                        currentCameraId = Camera.CameraInfo.CAMERA_FACING_BACK;
-                    }
-                }
-             /** 重启摄像头*/
-             reOpenCamera();
-            }
-        });
+        btnSwichCamera.setOnClickListener(this);
         return view;
     }
 
@@ -314,9 +278,31 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                 mCamera.setParameters(parameters);
                pop.dismiss();
                 break;
-           /* case R.id.pic_zoom://到相册
-
-                break;*/
+            case R.id.pic_zoom://到相册
+                Intent intent1 = new Intent(getActivity(),AlbumActivity.class);
+                startActivity(intent1);
+                break;
+            case R.id.btn_capture:
+                takePhoto();//拍照
+                break;
+            case R.id.sw_camera:
+                //当前打开的是后摄像头
+                if (currentCameraId == Camera.CameraInfo.CAMERA_FACING_BACK) {
+                    if (mCamera != null) {
+                        mCamera.stopPreview();//停止预览
+                        releaseCameraAndPreview();//释放资源
+                        currentCameraId = Camera.CameraInfo.CAMERA_FACING_FRONT;//重设id
+                    }
+                } else if (currentCameraId == Camera.CameraInfo.CAMERA_FACING_FRONT) {//当前打开的是前摄像头
+                    if (mCamera != null) {
+                        mCamera.stopPreview();
+                        releaseCameraAndPreview();
+                        currentCameraId = Camera.CameraInfo.CAMERA_FACING_BACK;
+                    }
+                }
+                /** 重启摄像头*/
+                reOpenCamera();
+                break;
         }
     }
 
@@ -336,10 +322,6 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                 editor.putInt("width",width);
                 editor.putInt("height",height);
                 editor.commit();
-              /*  Map<String,Integer> map = new HashMap<String, Integer>();
-                map.put("width",width);
-                map.put("height",height);
-                savaDataToSharedPreferences(map);*/
                 System.out.println("w："+width+"  h："+height+"==="+mCamera);
                 reOpenCamera();
                 mCamera.stopPreview();
@@ -368,11 +350,10 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
     }
     class CameraPreview extends SurfaceView implements SurfaceHolder.Callback{
         final String TAG ="CameraPreview";
-       // SurfaceHolder mHolder;
         Camera camera;
         Context context;
-        int screenHeight;
-        int screenWidth;
+        int screenHeight;//屏幕的高度
+        int screenWidth;//屏幕的宽度
 
 
          public CameraPreview(Context context,Camera c){
@@ -414,7 +395,6 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                 //预览view不存在
                 return;
             }
-
             //在作出改变之前停止预览view
              try {
                  camera.stopPreview();
@@ -452,9 +432,9 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                     }
                 }
                 Log.d(TAG,"result="+sizes.get(minW).width+"x"+sizes.get(minH).height);
-                List<Integer> list = parameters.getSupportedPreviewFrameRates();
                 parameters.setPreviewSize(sizes.get(minW).width,sizes.get(minH).height); // 设置预览图像大小
                 parameters.setPictureSize(sizes.get(minW).width,sizes.get(minH).height);//设置图片的大小
+                List<Integer> list = parameters.getSupportedPreviewFrameRates();
                 parameters.setPreviewFrameRate(list.get(list.size() - 1));
                 camera.setParameters(parameters);
                 //保存设置的分辨率
@@ -462,8 +442,6 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                 editor.putInt("width",sizes.get(minW).width);
                 editor.putInt("height",sizes.get(minH).height);
                 editor.commit();
-              //  mCamera.setDisplayOrientation(90);
-              //  mCamera.startPreview();
             }
 
             //用新的设置开启Preview
@@ -490,6 +468,10 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                 camera.stopPreview();
             }
         }
+
+        /**
+         * 获取屏幕的高度，宽度
+         */
         public void getScreenSize() {
             WindowManager wm = (WindowManager) context.getSystemService(
                     Context.WINDOW_SERVICE);
@@ -687,7 +669,7 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                showSeekBar();
            }
            /**
-            * 判断是否离开view，如果离开，2秒后隐藏聚焦条
+            * 判断是否离开view，如果离开，3秒后隐藏聚焦条
             */
            if(motionEvent.getAction()==MotionEvent.ACTION_UP) {
                /**

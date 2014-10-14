@@ -12,6 +12,7 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 
 import com.camera360.demo.utils.BitmapCache;
+import com.camera360.demo.utils.ZoomOutPageTransformer;
 
 import java.io.File;
 import java.util.HashMap;
@@ -43,6 +44,8 @@ public class SeekBigPicFragment extends Fragment{
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_big_pic,container,false);
         viewPager = (ViewPager) view.findViewById(R.id.viewPager);
+        //设置ViewPager的切换动画
+        viewPager.setPageTransformer(true,new ZoomOutPageTransformer());
         adapter = new MyPagerAdapter();
         System.out.println("当前index："+currentItem);
         viewPager.setAdapter(adapter);
