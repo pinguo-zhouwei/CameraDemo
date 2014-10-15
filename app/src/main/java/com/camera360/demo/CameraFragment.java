@@ -1,5 +1,6 @@
 package com.camera360.demo;
 
+import android.app.Activity;
 import android.app.Fragment;
 import android.content.Context;
 import android.content.Intent;
@@ -16,6 +17,7 @@ import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.OrientationEventListener;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -140,7 +142,8 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
         if(mCamera==null){
             //重新打开摄像头
             mCamera = Camera.open(currentCameraId);
-            mCamera.setDisplayOrientation(90);
+           // mCamera.setDisplayOrientation(90);
+            setCameraDisplayOrientation(getActivity(),currentCameraId,mCamera);
             //取出分辨率
             int width = sp.getInt("width",1280);
             int height = sp.getInt("height",720);
@@ -170,7 +173,8 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
         mCamera = getCameraInstance();
         currentCameraId = Camera.CameraInfo.CAMERA_FACING_BACK;//默认打开的是后摄像头
         /** 默认预览的图片为横向，我们需要将显示的Orientation旋转以下*/
-        mCamera.setDisplayOrientation(90);
+        //mCamera.setDisplayOrientation(90);
+        setCameraDisplayOrientation(getActivity(),currentCameraId,mCamera);
         qOpened = (mCamera != null);
         mPreview = new CameraPreview(getActivity(), mCamera);
         FrameLayout preview = (FrameLayout) view.findViewById(R.id.camera_preview);
@@ -377,7 +381,8 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
                     }else{
                         mCamera = camera = getCameraInstance();
                     }
-                   camera.setDisplayOrientation(90);
+                   //camera.setDisplayOrientation(90);
+                    setCameraDisplayOrientation(getActivity(),currentCameraId,camera);
                 }
                 camera.setPreviewDisplay(surfaceHolder);
                 camera.startPreview();
@@ -507,9 +512,39 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
              }
              mCamera.setParameters(cameraParameter);
              mCamera.startPreview();//参数设置完成后开启预览
+             /**
+              * 设置图片旋转后的方位
+              */
+             //onOrientationChanged();
              mCamera.takePicture(null, null, mPicture);
          }
+
+
      }
+
+    /**
+     * 设置图片的方位，对通过JPEG {PictureCallback}.返回的图片影响
+     */
+    public void onOrientationChanged() {
+        MyOrientationDetector   cameraOrientation = new MyOrientationDetector(getActivity());
+        int orientation = cameraOrientation.getOrientation();
+        mCamera.stopPreview();//设置参数前停止预览
+        Camera.Parameters cameraParameter = mCamera.getParameters();
+        Camera.CameraInfo info =
+                new Camera.CameraInfo();
+        Camera.getCameraInfo(currentCameraId, info);
+        orientation = (orientation + 45) / 90 * 90;
+        int rotation = 0;
+        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            rotation = (info.orientation - orientation + 360) % 360;
+        } else {  // back-facing camera
+            rotation = (info.orientation + orientation) % 360;
+        }
+        cameraParameter.setRotation(rotation);
+        cameraParameter.set("rotation",rotation);
+        System.out.println("拍照:rotation:"+rotation);
+        mCamera.startPreview();//参数设置完成后开启预览
+    }
     /**
      * Picture Callback 处理图片的预览和保存到文件
      */
@@ -623,7 +658,7 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
         public void onOrientationChanged(int orientation) {
             Log.i("MyOrientationDetector ","onOrientationChanged:"+orientation);
             this.Orientation=orientation;
-            Log.d("MyOrientationDetector","当前的传感器方向为"+orientation);
+            Log.i("MyOrientationDetector","当前的传感器方向为"+orientation);
         }
 
         public int getOrientation(){
@@ -686,4 +721,42 @@ public class CameraFragment extends Fragment implements View.OnClickListener{
        }
    }
 
+    /**
+     *  设置照片的显示朝向
+     * @param activity
+     * @param cameraId
+     * @param camera
+     */
+    public  void setCameraDisplayOrientation(Activity activity,
+                                                   int cameraId, android.hardware.Camera camera) {
+        android.hardware.Camera.CameraInfo info =
+                new android.hardware.Camera.CameraInfo();
+        android.hardware.Camera.getCameraInfo(cameraId, info);
+        int rotation = activity.getWindowManager().getDefaultDisplay()
+                .getRotation();
+        int degrees = 0;
+        switch (rotation) {
+            case Surface.ROTATION_0:
+                degrees = 0;
+                break;
+            case Surface.ROTATION_90:
+                degrees = 90;
+                break;
+            case Surface.ROTATION_180:
+                degrees = 180;
+                break;
+            case Surface.ROTATION_270:
+                degrees = 270;
+                break;
+        }
+
+        int result;
+        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            result = (info.orientation + degrees) % 360;
+            result = (360 - result) % 360;  // compensate the mirror
+        } else {  // back-facing
+            result = (info.orientation - degrees + 360) % 360;
+        }
+        camera.setDisplayOrientation(result);
+    }
 }
